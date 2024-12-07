@@ -1,5 +1,7 @@
-import { flowTraining } from './training.js';
+//import { flowTraining } from './training.js';
+import { voiceNoteFlow } from './training.js';
 
 export const allFlows = [
-    flowTraining
+    //flowTraining,
+    voiceNoteFlow
 ];
