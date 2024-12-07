@@ -1,6 +1,6 @@
 import { addKeyword } from '@builderbot/bot';
 import { OpenAI } from 'openai';
-import { readFileSync, appendFileSync } from 'fs';
+import { readFileSync, appendFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { format } from 'date-fns';
 import dotenv from 'dotenv';
@@ -16,9 +16,16 @@ const DATA_DIR = join(process.cwd(), 'data');
 const MODIFICATIONS_FILE = join(DATA_DIR, 'modifications.txt');
 const HISTORY_FILE = join(DATA_DIR, 'history.txt');
 const PROMPT_FILE = join(DATA_DIR, 'current_prompt.txt');
+const HISTORY_PROMPT_FILE = join(DATA_DIR, 'history_prompt.txt');
+
+// Prompts paths
+const PROMPT_DIR = join(process.cwd(), 'src/prompts');
+const MODIFICATION_PROMPT_DIR = join(PROMPT_DIR,'analizador_modificaciones.txt');
+const NEXT_ITERATION_PROMPT = join(PROMPT_DIR, 'next_iteration_prompt.txt');
 
 // Constants
 const REGEX_ANY_CHARACTER = '/^.+$/';
+
 
 // Enhanced logging function
 const logInfo = (context, message, data = null) => {
@@ -30,6 +37,26 @@ const logInfo = (context, message, data = null) => {
     }
     console.log('-'.repeat(80));
 };
+
+
+// Function to obtain the prompt required
+
+const getPrompt = async (requested_prompt) => {
+    try {
+        const text = readFileSync(requested_prompt,'utf-8')
+        logInfo(text);
+
+        return text;
+    } catch (error) {
+        console.error('Error al leer el prompt:', error);
+        return null;
+    }
+};
+
+
+const processAudioMessage = async (trancription) => {
+    
+}
 
 // Function to generate new prompt based on modifications
 const generateNewPrompt = async (modifications) => {
@@ -51,8 +78,10 @@ const generateNewPrompt = async (modifications) => {
         });
 
         const newPrompt = completion.choices[0].message.content;
+        writeFileSync(PROMPT_FILE, ''); // clear previous prompt
         appendFileSync(PROMPT_FILE, newPrompt);
-        appendFileSync(MODIFICATIONS_FILE, ''); // Clear modifications
+        appendFileSync(HISTORY_PROMPT_FILE, newPrompt);
+        writeFileSync(MODIFICATIONS_FILE, ''); // Clear modifications
         
         logInfo('generateNewPrompt', 'Generated new prompt', { newPrompt });
         return newPrompt;
@@ -67,24 +96,8 @@ const analyzeForModifications = async (conversation) => {
     try {
         logInfo('analyzeForModifications', 'Analyzing conversation for modifications');
 
-        const prompt = `
-        Analiza esta conversación entre un usuario y un chatbot experto en piscinas.
-        El usuario puede estar sugiriendo modificaciones sobre cómo debe comportarse o responder el bot.
-        
-        Conversación:
-        ${conversation.map(msg => `${msg.role}: ${msg.content}`).join('\n')}
-        
-        Detecta si hay alguna sugerencia de modificación y extrae la información en formato JSON:
-        {
-            "is_modification": boolean,
-            "modification_type": "comportamiento" | "flujo" | "respuestas" | "otro",
-            "description": "Descripción detallada de la modificación sugerida",
-            "severity": "alta" | "media" | "baja",
-            "implementation_notes": "Notas sobre cómo implementar el cambio"
-        }
-        
-        Si no hay modificación sugerida, responde con "is_modification": false y los demás campos null.
-        Responde SOLO con el JSON, sin explicaciones adicionales.`;
+        const text_prompt = await getPrompt(MODIFICATION_PROMPT_DIR);
+        const prompt = `${text_prompt}\nConversación: ${conversation.map(msg => `${msg.role}: ${msg.content}`).join('\n')}`; // Combina text_prompt y la conversación
 
         const completion = await openai.chat.completions.create({
             model: "gpt-4o-mini",
@@ -111,8 +124,9 @@ const saveModification = async (modification) => {
     appendFileSync(HISTORY_FILE, entry);
     
     const modifications = readFileSync(MODIFICATIONS_FILE, 'utf-8').split('\n').filter(Boolean);
-    if (modifications.length >= 10) {
+    if (modifications.length >= 3) {
         await generateNewPrompt(modifications);
+        //Comando para limpiar el fichero de modificación y dejar limpio 
     }
 };
 
@@ -122,22 +136,8 @@ const getNextInteraction = async (conversation) => {
         logInfo('getNextInteraction', 'Getting next bot response');
 
         const basePrompt = readFileSync(PROMPT_FILE, 'utf-8');
-        const prompt = `
-        ${basePrompt}
-
-        Mantienes una conversación con un cliente potencial sobre piscinas.
-        
-        Historial de la conversación:
-        ${conversation.map(msg => `${msg.role}: ${msg.content}`).join('\n')}
-        
-        Instrucciones:
-        1. Si detectas que el usuario está sugiriendo una modificación, reconócela
-        2. Mantén un tono profesional pero cercano
-        3. Asegúrate de recopilar toda la información necesaria de forma natural
-        4. Si el usuario dice "salir", confirma que quiere terminar
-        5. Adapta tu tono según el cliente
-        
-        Responde de manera natural y conversacional.`;
+        const text_prompt = await getPrompt(NEXT_ITERATION_PROMPT);
+        const prompt = `${basePrompt}${text_prompt}\nHistorial de la conversación: ${conversation.map(msg => `${msg.role}: ${msg.content}`).join('\n')}`; // Combina text_prompt y la conversación
 
         const completion = await openai.chat.completions.create({
             model: "gpt-4o-mini",
