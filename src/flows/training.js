@@ -1,12 +1,12 @@
 import { addKeyword, EVENTS } from '@builderbot/bot';
 import { OpenAI } from 'openai';
-import { readFileSync, appendFileSync, writeFileSync, createReadStream } from 'fs';
+import { readFileSync, appendFileSync, writeFileSync, existsSync, mkdirSync, createReadStream } from 'fs';
 import { join } from 'path';
 import { format } from 'date-fns';
 import dotenv from 'dotenv';
 import { log } from 'console';
+import { toAsk } from "@builderbot-plugins/openai-assistants";
 
-import { BaileysProvider as Provider } from '@builderbot/provider-baileys'
 
 
 // Initialize environment variables
@@ -21,13 +21,15 @@ const MODIFICATIONS_FILE = join(DATA_DIR, 'modifications.txt');
 const HISTORY_FILE = join(DATA_DIR, 'history.txt');
 const PROMPT_FILE = join(DATA_DIR, 'current_prompt.txt');
 const HISTORY_PROMPT_FILE = join(DATA_DIR, 'history_prompt.txt');
-const TRANSCRIPTIONS_FILE = join(DATA_DIR, 'transcriptions.txt');
 
 
 // Prompts paths
 const PROMPT_DIR = join(process.cwd(), 'src/prompts');
-const MODIFICATION_PROMPT_DIR = join(PROMPT_DIR,'analizador_modificaciones.txt');
+const MODIFICATION_PROMPT_DIR = join(PROMPT_DIR, 'analizador_modificaciones.txt');
 const NEXT_ITERATION_PROMPT = join(PROMPT_DIR, 'next_iteration_prompt.txt');
+
+// Audio paths
+const AUDIO_DIR = join(process.cwd(), 'voice_notes');
 
 // Constants
 const REGEX_ANY_CHARACTER = '/^.+$/';
@@ -49,7 +51,7 @@ const logInfo = (context, message, data = null) => {
 
 const getPrompt = async (requested_prompt) => {
     try {
-        const text = readFileSync(requested_prompt,'utf-8')
+        const text = readFileSync(requested_prompt, 'utf-8')
         logInfo(text);
 
         return text;
@@ -61,57 +63,52 @@ const getPrompt = async (requested_prompt) => {
 
 
 // Function to process audio messages
-const processAudioMessage = async (path) => {
+const processAudioMessage = async (ctx, provider) => {
     try {
-        console.log('TRANSCRIPCION' + '*'.repeat(100) + path + '*'.repeat(50)) ;
-        console.log('MESSAGE CONTEXT');
-        // Check if the message has audio media
-        //if (ctx.mediaType === 'audio') {
-            logInfo('processAudioMessage', `Saving audio to ${path}`);
-            //console.log('llegamos a transcript', ctx.message.audioMessage);
+        const localPath = await provider.saveFile(ctx, { path: AUDIO_DIR });
+        console.log('Ruta del archivo de audio local:', localPath);
 
-            const audioData = readFileSync(path);
+        // Leer el archivo de audio
+        const audioData = createReadStream(localPath);
 
-            // Crear un objeto FormData y agregar el archivo
-            const audioBlob = new Blob([audioData], { type: 'audio/ogg' });
+        // Transcribir el audio usando OpenAI
+        const transcribeResponse = await openai.audio.transcriptions.create({
+            file: audioData,
+            model: 'whisper-1',
+        });
+        const transcription = transcribeResponse.text;
+        console.log('Respuesta del asistente de OpenAI:', transcription);
 
-            const formData = new FormData();
-            formData.append('file', audioBlob, 'audio.ogg');
+        return transcription;
 
-            //console.log('llegamos a transcript', audioData);
-            // Transcribe the audio using OpenAI
-            const transcript = await openai.audio.transcriptions.create({
-                audio: formData,
-                model: 'whisper-1'
-            });
-
-            console.log('TRANSCRIPCION' + '+ '.repeat(100) + transcript + ' +'.repeat(50)) ;
-
-            // Save the transcription
-            const transcriptionEntry = `[${format(new Date(), 'yyyy-MM-dd HH:mm:ss')}] ${transcript.text}`;
-            appendFileSync(TRANSCRIPTIONS_FILE, transcriptionEntry + '\n');
-            console.log('TRANSCRIPCION' + '+'.repeat(100) + transcriptionEntry + '+'.repeat(50)) ;
-
-            // Log the transcription
-            logInfo('processAudioMessage', 'Audio transcription:', { transcription: transcript.text });
-
-            // Return the transcription
-           // return transcript.text;
-        //} else {
-        //    return null;
-        //}
     } catch (error) {
         logInfo('processAudioMessage', 'Error processing audio message', { error: error.message });
         return null;
     }
 };
 
+// Función auxiliar para manejar mensajes (texto o voz)
+const handleMessage = async (ctx, provider) => {
+    
+    // Si es un mensaje de voz
+    if (ctx.message?.audioMessage || ctx.message?.messageContextInfo?.messageContent?.audioMessage) {
+        try {
+            const transcript = processAudioMessage(ctx, provider);
+            return transcript;
+        } catch (error) {
+            console.error('Error procesando audio:', error);
+            return null;
+        }
+    }
+    // Si es un mensaje de texto
+    return ctx.body;
+};
 
 // Function to generate new prompt based on modifications
 const generateNewPrompt = async (modifications) => {
     try {
         const currentPrompt = readFileSync(PROMPT_FILE, 'utf-8');
-        
+
         const completion = await openai.chat.completions.create({
             model: "gpt-4o-mini",
             messages: [
@@ -131,7 +128,7 @@ const generateNewPrompt = async (modifications) => {
         appendFileSync(PROMPT_FILE, newPrompt);
         appendFileSync(HISTORY_PROMPT_FILE, newPrompt);
         writeFileSync(MODIFICATIONS_FILE, ''); // Clear modifications
-        
+
         logInfo('generateNewPrompt', 'Generated new prompt', { newPrompt });
         return newPrompt;
     } catch (error) {
@@ -168,14 +165,13 @@ const analyzeForModifications = async (conversation) => {
 const saveModification = async (modification) => {
     const timestamp = format(new Date(), 'yyyy-MM-dd HH:mm:ss');
     const entry = `[${timestamp}] ${JSON.stringify(modification)}\n`;
-    
+
     appendFileSync(MODIFICATIONS_FILE, entry);
     appendFileSync(HISTORY_FILE, entry);
-    
+
     const modifications = readFileSync(MODIFICATIONS_FILE, 'utf-8').split('\n').filter(Boolean);
     if (modifications.length >= 3) {
         await generateNewPrompt(modifications);
-        //Comando para limpiar el fichero de modificación y dejar limpio 
     }
 };
 
@@ -204,35 +200,28 @@ const getNextInteraction = async (conversation) => {
     }
 };
 
-export const voiceNoteFlow = addKeyword<Provider>(EVENTS.VOICE_NOTE)
-    .addAction(async (ctx, { provider, flowDynamic }) => {
-        //console.log('SE RECIBE LA NOTA DE VOZ ' + '+'.repeat(100) + '+'.repeat(50)) ;
-        try {
+// Asegúrate de que el directorio existe
+if (!existsSync(AUDIO_DIR)) {
+    mkdirSync(AUDIO_DIR, { recursive: true });
+    console.log(`Directorio creado: ${AUDIO_DIR}`);
+}
 
-           // Guardar el archivo de voz
-            const audioPath = join(DATA_DIR, `${Date.now()}.ogg`);
-            await provider.saveFile(ctx, audioPath);
-            console.log();
-
-            // Procesar el archivo de voz
-            const transcription = await processAudioMessage(audioPath);
-            console.log('SE RECIBE LA NOTA DE VOZ ' + '///'.repeat(100) + transcription +'+'.repeat(50)) ;
-            await flowDynamic('RECIBIDA LA NOTA DE VOZ');
-
-        } catch (error) {
-            console.error('Error al procesar la nota de voz:', error);
-            await flowDynamic('Hubo un error al procesar la nota de voz. Por favor, intenta nuevamente.');
-        }
-    });
-
-/*
 // Main flow export
 export const flowTraining = addKeyword(REGEX_ANY_CHARACTER, { regex: true })
-    .addAction(async (ctx, { flowDynamic, state }) => {
+    .addAction(async (ctx, { flowDynamic, state, provider }) => {
         try {
-            const message = ctx.body;
+            //const message = ctx.body;
             let isInTraining = state.get('isInTraining');
-            
+
+            const message = await handleMessage(ctx, provider);
+
+            if (!message) {
+                await flowDynamic('Hubo un error al procesar el mensaje. Por favor, intenta nuevamente.');
+                return;
+            }
+
+            //console.log('+'.repeat(50) + message);
+
             // Check if starting training
             if (!isInTraining) {
                 if (message.toLowerCase() === 'entrenar') {
@@ -263,25 +252,15 @@ export const flowTraining = addKeyword(REGEX_ANY_CHARACTER, { regex: true })
 
             // Get or initialize conversation context
             let conversation = state.get('conversation') || [];
-            //conversation.push({ role: 'user', content: message });
-
-            // Process audio message, if any
-            const transcription = await processAudioMessage(ctx);
-            //console.log('TRANSCRIPCION' + '*'.repeat(100) + ctx.body + '*'.repeat(50)) ;
-            if (transcription) {
-                conversation.push({ role: 'user', content: transcription });
-            } else {
-                conversation.push({ role: 'user', content: message });
-            }
-
+            conversation.push({ role: 'user', content: message });
 
             // Analyze for modifications
             const analysis = await analyzeForModifications(conversation);
-            
+
             if (analysis.is_modification) {
                 logInfo('flowTraining', 'Modification detected', analysis);
                 await saveModification(analysis);
-                
+
                 await flowDynamic([
                     '✅ He detectado una sugerencia de modificación:',
                     `Tipo: ${analysis.modification_type}`,
@@ -289,7 +268,7 @@ export const flowTraining = addKeyword(REGEX_ANY_CHARACTER, { regex: true })
                     '',
                     'La modificación ha sido registrada. ¿Hay algo más en lo que pueda ayudarte?'
                 ]);
-                
+
                 conversation.push({
                     role: 'assistant',
                     content: `Modificación registrada: ${analysis.description}`
@@ -303,10 +282,10 @@ export const flowTraining = addKeyword(REGEX_ANY_CHARACTER, { regex: true })
 
             // Update conversation state
             await state.update({ conversation });
-            
+
         } catch (error) {
             logInfo('flowTraining', 'Error in flow', { error: error.message });
             await flowDynamic('Ha ocurrido un error. Por favor, intenta de nuevo.');
         }
     });
-    */
+
