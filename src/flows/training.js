@@ -120,7 +120,8 @@ const generateNewPrompt = async (modifications) => {
                     role: "user",
                     content: `Current prompt:\n${currentPrompt}\n\nModifications to incorporate:\n${modifications.join('\n')}\n\nCreate an improved prompt that incorporates these modifications while maintaining the core functionality.`
                 }
-            ]
+            ],
+            temperature: 0.7
         });
 
         const newPrompt = completion.choices[0].message.content;
@@ -143,7 +144,7 @@ const analyzeForModifications = async (conversation) => {
         logInfo('analyzeForModifications', 'Analyzing conversation for modifications');
 
         const text_prompt = await getPrompt(MODIFICATION_PROMPT_DIR);
-        const prompt = `${text_prompt}\nConversación: ${conversation.map(msg => `${msg.role}: ${msg.content}`).join('\n')}`; // Combina text_prompt y la conversación
+        const prompt = `\nConversación: ${conversation.map(msg => `${msg.role}: ${msg.content}`).join('\n')}${text_prompt}`; // Combina text_prompt y la conversación
 
         const completion = await openai.chat.completions.create({
             model: "gpt-4o-mini",
@@ -273,6 +274,8 @@ export const flowTraining = addKeyword(REGEX_ANY_CHARACTER, { regex: true })
                     role: 'assistant',
                     content: `Modificación registrada: ${analysis.description}`
                 });
+
+                return;
             } else {
                 // Normal conversation flow
                 const response = await getNextInteraction(conversation);

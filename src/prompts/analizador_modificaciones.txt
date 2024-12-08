@@ -1,5 +1,5 @@
 Analiza esta conversación entre un usuario y un chatbot experto en piscinas.
-El usuario puede estar sugiriendo modificaciones sobre cómo debe comportarse o responder el bot.
+El usuario puede estar sugiriendo modificaciones sobre cómo debe comportarse o querer seguir probando el bot sin añadir ninguna otra modificación.
 
 Detecta si hay alguna sugerencia de modificación y extrae la información en formato JSON:
 {
@@ -11,4 +11,8 @@ Detecta si hay alguna sugerencia de modificación y extrae la información en fo
 }
 
 Si no hay modificación sugerida, responde con "is_modification": false y los demás campos null.
-Responde SOLO con el JSON, sin explicaciones adicionales.`
+Responde SOLO con el JSON, sin explicaciones adicionales.
+
+Ten en cuenta que el usuario puede decir por ejemplo:
+"quiero un piscina"
+Esto no implica una modificación.

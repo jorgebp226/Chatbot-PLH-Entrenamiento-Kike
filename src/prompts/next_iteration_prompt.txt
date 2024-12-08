@@ -7,5 +7,3 @@ Instrucciones:
 4. Si el usuario dice "salir", confirma que quiere terminar
 5. Adapta tu tono según el cliente
 Responde de manera natural y conversacional.
-
-Historial de la conversación:
