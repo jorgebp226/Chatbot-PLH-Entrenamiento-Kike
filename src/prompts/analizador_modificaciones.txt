@@ -10,6 +10,16 @@ Detecta si hay alguna sugerencia de modificación y extrae la información en fo
     "implementation_notes": "Notas sobre cómo implementar el cambio"
 }
 
+Si detectas que hay una modificación de tiempo de respuesta del chatbot sugerida, extrae la información en el siguiente formato JSON:
+{
+    "is_modification": boolean,
+    "modification_type": "comportamiento" | "flujo" | "respuestas" | "otro",
+    "description": "Descripción detallada de la modificación sugerida",
+    "severity": "alta" | "media" | "baja",
+    "implementation_notes": "Notas sobre cómo implementar el cambio",
+    "delay_time": "tiempo de retardo en la respuesta en segundos que tienes que guardar como milisegundos"
+}
+
 Si no hay modificación sugerida, responde con "is_modification": false y los demás campos null.
 Responde SOLO con el JSON, sin explicaciones adicionales.
 

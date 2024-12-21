@@ -35,6 +35,14 @@ const AUDIO_DIR = join(process.cwd(), 'voice_notes');
 const REGEX_ANY_CHARACTER = '/^.+$/';
 
 
+// Delay response variable
+const VARIABLES_CHAT = join(DATA_DIR, 'variables_chat.json');
+const message_delay_file = readFileSync(VARIABLES_CHAT, 'utf-8');
+var variables_chat_json = JSON.parse(message_delay_file);
+var message_delay = variables_chat_json.delay_Time_Response;
+
+
+
 // Enhanced logging function
 const logInfo = (context, message, data = null) => {
     const timestamp = new Date().toISOString();
@@ -46,6 +54,7 @@ const logInfo = (context, message, data = null) => {
     console.log('-'.repeat(80));
 };
 
+logInfo("tiempo de respuesta incial: ", message_delay);
 
 // Function to obtain the prompt required
 
@@ -162,10 +171,20 @@ const analyzeForModifications = async (conversation) => {
     }
 };
 
+
 // Function to save modification
 const saveModification = async (modification) => {
     const timestamp = format(new Date(), 'yyyy-MM-dd HH:mm:ss');
     const entry = `[${timestamp}] ${JSON.stringify(modification)}\n`;
+
+    logInfo('tiempo de respuesta modificado:', modification.delay_time);
+
+    if(modification.delay_time) {
+        writeFileSync(VARIABLES_CHAT, ''); // clear previous prompt
+        appendFileSync(VARIABLES_CHAT, `{\n "delay_Time_Response": ${JSON.stringify(modification.delay_time)}\n }`);
+        message_delay = modification.delay_time;
+        logInfo('tiempo de respuesta actualizado:', message_delay);
+    }
 
     appendFileSync(MODIFICATIONS_FILE, entry);
     appendFileSync(HISTORY_FILE, entry);
@@ -279,7 +298,10 @@ export const flowTraining = addKeyword(REGEX_ANY_CHARACTER, { regex: true })
             } else {
                 // Normal conversation flow
                 const response = await getNextInteraction(conversation);
-                await flowDynamic(response);
+                await flowDynamic([{
+                    body:response, 
+                    delay:message_delay}]);
+
                 conversation.push({ role: 'assistant', content: response });
             }
 
