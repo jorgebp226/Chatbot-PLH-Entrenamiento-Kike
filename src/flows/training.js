@@ -28,20 +28,18 @@ const PROMPT_DIR = join(process.cwd(), 'src/prompts');
 const MODIFICATION_PROMPT_DIR = join(PROMPT_DIR, 'analizador_modificaciones.txt');
 const NEXT_ITERATION_PROMPT = join(PROMPT_DIR, 'next_iteration_prompt.txt');
 
-// Audio paths
+// Media paths
 const AUDIO_DIR = join(process.cwd(), 'voice_notes');
+const IMAGE_DIR = join(process.cwd(), 'images');
 
 // Constants
 const REGEX_ANY_CHARACTER = '/^.+$/';
-
 
 // Delay response variable
 const VARIABLES_CHAT = join(DATA_DIR, 'variables_chat.json');
 const message_delay_file = readFileSync(VARIABLES_CHAT, 'utf-8');
 var variables_chat_json = JSON.parse(message_delay_file);
 var message_delay = variables_chat_json.delay_Time_Response;
-
-
 
 // Enhanced logging function
 const logInfo = (context, message, data = null) => {
@@ -96,6 +94,18 @@ const processAudioMessage = async (ctx, provider) => {
     }
 };
 
+// Function to process image messages
+
+const processImageMessage = async (ctx, provider) => {
+    try{
+        const localPath = await provider.saveFile(ctx, {path: IMAGE_DIR });
+        console.log('Ruta del archivo de imagen local:', localPath);
+    } catch (error) {
+        logInfo('processImageMessage', 'Error processing image message', { error: error.message });
+        return null;
+    }
+}
+
 // Función auxiliar para manejar mensajes (texto o voz)
 const handleMessage = async (ctx, provider) => {
     
@@ -108,9 +118,18 @@ const handleMessage = async (ctx, provider) => {
             console.error('Error procesando audio:', error);
             return null;
         }
+    } else if( ctx.message?.imageMessage || ctx.message?.messageContextInfo?.messageContent?.imageMessage) {
+       try{ 
+            processImageMessage(ctx, provider);
+            return ctx.body;
+       } catch(error) {
+            console.error('Error en el procesado de la imagen', error);
+            return null;
+       }
+    } else {
+        // Si es un mensaje de texto
+        return ctx.body;
     }
-    // Si es un mensaje de texto
-    return ctx.body;
 };
 
 // Function to generate new prompt based on modifications
@@ -224,6 +243,12 @@ const getNextInteraction = async (conversation) => {
 if (!existsSync(AUDIO_DIR)) {
     mkdirSync(AUDIO_DIR, { recursive: true });
     console.log(`Directorio creado: ${AUDIO_DIR}`);
+}
+
+// Asegúrate de que el directorio existe
+if (!existsSync(IMAGE_DIR)) {
+    mkdirSync(IMAGE_DIR, { recursive: true });
+    console.log(`Directorio creado: ${IMAGE_DIR}`);
 }
 
 // Main flow export
