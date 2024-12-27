@@ -3,10 +3,8 @@ import { OpenAI } from 'openai';
 import { readFileSync, appendFileSync, writeFileSync, existsSync, mkdirSync, createReadStream } from 'fs';
 import { join } from 'path';
 import { format } from 'date-fns';
+import { S3Buckets } from '../services/s3buckets.js';
 import dotenv from 'dotenv';
-import { log } from 'console';
-import { toAsk } from "@builderbot-plugins/openai-assistants";
-
 
 
 // Initialize environment variables
@@ -53,6 +51,7 @@ const logInfo = (context, message, data = null) => {
 };
 
 logInfo("tiempo de respuesta incial: ", message_delay);
+
 
 // Function to obtain the prompt required
 
@@ -108,10 +107,16 @@ const processImageMessage = async (ctx, provider) => {
 
 // Función auxiliar para manejar mensajes (texto o voz)
 const handleMessage = async (ctx, provider) => {
+
+    const phoneNumber = ctx.from.replace('@s.whatsapp.net', '');
+    logInfo("numero del usuario: ", phoneNumber);
     
+
     // Si es un mensaje de voz
     if (ctx.message?.audioMessage || ctx.message?.messageContextInfo?.messageContent?.audioMessage) {
-        try {
+        try {           
+            const file = await provider.saveFile(ctx);
+            await S3Buckets.uploadMedia(phoneNumber, file, 'audio');
             const transcript = processAudioMessage(ctx, provider);
             return transcript;
         } catch (error) {
@@ -121,6 +126,8 @@ const handleMessage = async (ctx, provider) => {
     } else if( ctx.message?.imageMessage || ctx.message?.messageContextInfo?.messageContent?.imageMessage) {
        try{ 
             processImageMessage(ctx, provider);
+            const file = await provider.saveFile(ctx);
+            await S3Buckets.uploadMedia(phoneNumber, file, 'image');
             return ctx.body;
        } catch(error) {
             console.error('Error en el procesado de la imagen', error);
