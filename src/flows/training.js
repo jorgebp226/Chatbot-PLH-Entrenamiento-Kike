@@ -4,27 +4,30 @@ import { readFileSync, appendFileSync, writeFileSync, existsSync, mkdirSync, cre
 import { join } from 'path';
 import { format } from 'date-fns';
 import { S3Buckets } from '../services/s3buckets.js';
+import { DynamoDBService } from '../services/dynamodb.js'
+import { DynamoDBServiceBussiness } from '../services/dynamoDBBussiness.js'
 import dotenv from 'dotenv';
 
 
 // Initialize environment variables
 dotenv.config();
+
+// Id Bussiness
+const bussinessId = process.env.BUSSINES_ID;
 // Initialize OpenAI
 const apiKey = process.env.OPENAI_API_KEY;
 const openai = new OpenAI({ apiKey });
 
 // File paths
 const DATA_DIR = join(process.cwd(), 'data');
-const MODIFICATIONS_FILE = join(DATA_DIR, 'modifications.txt');
-const HISTORY_FILE = join(DATA_DIR, 'history.txt');
-const PROMPT_FILE = join(DATA_DIR, 'current_prompt.txt');
-const HISTORY_PROMPT_FILE = join(DATA_DIR, 'history_prompt.txt');
+
+// Inicializar el servicio de DynamoDB
+const dynamoService = new DynamoDBService();
+const dynamoServiceBussiness = new DynamoDBServiceBussiness();
 
 
 // Prompts paths
 const PROMPT_DIR = join(process.cwd(), 'src/prompts');
-const MODIFICATION_PROMPT_DIR = join(PROMPT_DIR, 'analizador_modificaciones.txt');
-const NEXT_ITERATION_PROMPT = join(PROMPT_DIR, 'next_iteration_prompt.txt');
 
 // Media paths
 const AUDIO_DIR = join(process.cwd(), 'voice_notes');
@@ -32,6 +35,7 @@ const IMAGE_DIR = join(process.cwd(), 'images');
 
 // Constants
 const REGEX_ANY_CHARACTER = '/^.+$/';
+var phoneNumber = 0;
 
 // Delay response variable
 const VARIABLES_CHAT = join(DATA_DIR, 'variables_chat.json');
@@ -51,21 +55,6 @@ const logInfo = (context, message, data = null) => {
 };
 
 logInfo("tiempo de respuesta incial: ", message_delay);
-
-
-// Function to obtain the prompt required
-
-const getPrompt = async (requested_prompt) => {
-    try {
-        const text = readFileSync(requested_prompt, 'utf-8')
-        logInfo(text);
-
-        return text;
-    } catch (error) {
-        console.error('Error al leer el prompt:', error);
-        return null;
-    }
-};
 
 
 // Function to process audio messages
@@ -108,15 +97,14 @@ const processImageMessage = async (ctx, provider) => {
 // Función auxiliar para manejar mensajes (texto o voz)
 const handleMessage = async (ctx, provider) => {
 
-    const phoneNumber = ctx.from.replace('@s.whatsapp.net', '');
+    phoneNumber = ctx.from.replace('@s.whatsapp.net', '');
     logInfo("numero del usuario: ", phoneNumber);
-    
 
     // Si es un mensaje de voz
     if (ctx.message?.audioMessage || ctx.message?.messageContextInfo?.messageContent?.audioMessage) {
         try {           
-            const file = await provider.saveFile(ctx);
-            await S3Buckets.uploadMedia(phoneNumber, file, 'audio');
+            //const file = await provider.saveFile(ctx);
+            //await S3Buckets.uploadMedia(phoneNumber, file, 'audio');
             const transcript = processAudioMessage(ctx, provider);
             return transcript;
         } catch (error) {
@@ -142,7 +130,7 @@ const handleMessage = async (ctx, provider) => {
 // Function to generate new prompt based on modifications
 const generateNewPrompt = async (modifications) => {
     try {
-        const currentPrompt = readFileSync(PROMPT_FILE, 'utf-8');
+        const currentPrompt = await dynamoService.getPrompt(phoneNumber);
 
         const completion = await openai.chat.completions.create({
             model: "gpt-4o-mini",
@@ -160,10 +148,7 @@ const generateNewPrompt = async (modifications) => {
         });
 
         const newPrompt = completion.choices[0].message.content;
-        writeFileSync(PROMPT_FILE, ''); // clear previous prompt
-        appendFileSync(PROMPT_FILE, newPrompt);
-        appendFileSync(HISTORY_PROMPT_FILE, newPrompt);
-        writeFileSync(MODIFICATIONS_FILE, ''); // Clear modifications
+        await dynamoService.updatePrompt(phoneNumber, newPrompt);
 
         logInfo('generateNewPrompt', 'Generated new prompt', { newPrompt });
         return newPrompt;
@@ -178,7 +163,7 @@ const analyzeForModifications = async (conversation) => {
     try {
         logInfo('analyzeForModifications', 'Analyzing conversation for modifications');
 
-        const text_prompt = await getPrompt(MODIFICATION_PROMPT_DIR);
+        const text_prompt = await dynamoServiceBussiness.getModificationAnalizer(bussinessId);
         const prompt = `\nConversación: ${conversation.map(msg => `${msg.role}: ${msg.content}`).join('\n')}${text_prompt}`; // Combina text_prompt y la conversación
 
         const completion = await openai.chat.completions.create({
@@ -203,7 +188,9 @@ const saveModification = async (modification) => {
     const timestamp = format(new Date(), 'yyyy-MM-dd HH:mm:ss');
     const entry = `[${timestamp}] ${JSON.stringify(modification)}\n`;
 
-    logInfo('tiempo de respuesta modificado:', modification.delay_time);
+    await dynamoService.saveModification(phoneNumber, modification);
+
+   // logInfo('tiempo de respuesta modificado:', modification.delay_time);
 
     if(modification.delay_time) {
         writeFileSync(VARIABLES_CHAT, ''); // clear previous prompt
@@ -212,12 +199,11 @@ const saveModification = async (modification) => {
         logInfo('tiempo de respuesta actualizado:', message_delay);
     }
 
-    appendFileSync(MODIFICATIONS_FILE, entry);
-    appendFileSync(HISTORY_FILE, entry);
-
-    const modifications = readFileSync(MODIFICATIONS_FILE, 'utf-8').split('\n').filter(Boolean);
+    const modifications = await dynamoService.getModifications(phoneNumber);
     if (modifications.length >= 3) {
         await generateNewPrompt(modifications);
+        // Limpiar la lista de modificaciones en DynamoDB
+        await dynamoService.clearModifications(phoneNumber);
     }
 };
 
@@ -226,8 +212,9 @@ const getNextInteraction = async (conversation) => {
     try {
         logInfo('getNextInteraction', 'Getting next bot response');
 
-        const basePrompt = readFileSync(PROMPT_FILE, 'utf-8');
-        const text_prompt = await getPrompt(NEXT_ITERATION_PROMPT);
+        const basePrompt = await dynamoService.getPrompt(phoneNumber);
+        logInfo('CURRENT_PROMPT: ', basePrompt);
+        const text_prompt = await dynamoServiceBussiness.getNextIteration(bussinessId);
         const prompt = `${basePrompt}${text_prompt}\nHistorial de la conversación: ${conversation.map(msg => `${msg.role}: ${msg.content}`).join('\n')}`; // Combina text_prompt y la conversación
 
         const completion = await openai.chat.completions.create({
