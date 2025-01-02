@@ -4,6 +4,7 @@ import { allFlows } from './flows/index.js';
 import { initializeDataFiles } from './utils/flow-manager.js';
 import dotenv from 'dotenv';
 import { httpInject } from "@builderbot-plugins/openai-assistants"
+import bot from '@builderbot/bot';
 
 // Initialize environment variables
 dotenv.config();
@@ -38,9 +39,6 @@ const main = async () => {
             }
         });
 
-        // Initialize HTTP server explicitly
-        //adapterProvider.initHttpServer(3000);
-
         // Create bot with all configurations
         const {httpServer} = await createBot({
             flow: adapterFlow,
@@ -56,6 +54,36 @@ const main = async () => {
 
         httpInject(adapterProvider.server);
         httpServer(+PORT);
+
+        // ENDPOINT PARA GRUPO DE WHATSAPP
+        //----------------------------------------------------------------------
+        adapterProvider.server.post('/send-message', async ( req, res) => {
+            try {
+                const body = req.body;
+                const message = body.message;
+                const mediaUrl = body.mediaUrl;
+
+                await adapterProvider.sendMessage(process.env.FRIEND_NUMBER, message, {media: mediaUrl});
+                //await adapterProvider.sendMessage(process.env.FRIEND_NUMBER, 'gay', {});
+
+                // Envía la respuesta para completar la solicitud HTTP
+                //req.res.writeHead(200, { 'Content-Type': 'application/json' });
+                //req.write(JSON.stringify({ success: true }));
+                //req.end();
+            } catch(err) {
+                console.error('Error sending message:', err);
+                // Envía la respuesta para completar la solicitud HTTP
+                //req.res.writeHead(500, { 'Content-Type': 'application/json' });
+                //req.write(JSON.stringify({ error: err.message }));
+                //req.end()
+            }
+        });
+
+
+        adapterProvider.server.get('/get-message', (req, res) => {
+            res.end('esto es el server contestando');
+        });
+        //-----------------------------------------------------------------------
 
         console.log('\n=== Bot Trainer Initialized ===');
         console.log('- Use "entrenar" to start training mode');
