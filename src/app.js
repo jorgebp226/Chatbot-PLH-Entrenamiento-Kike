@@ -3,8 +3,7 @@ import { BaileysProvider } from '@builderbot/provider-baileys';
 import { allFlows } from './flows/index.js';
 import { initializeDataFiles } from './utils/flow-manager.js';
 import dotenv from 'dotenv';
-import { httpInject } from "@builderbot-plugins/openai-assistants"
-import bot from '@builderbot/bot';
+import { httpInject } from "@builderbot-plugins/openai-assistants";
 
 // Initialize environment variables
 dotenv.config();
@@ -54,31 +53,50 @@ const main = async () => {
 
         httpInject(adapterProvider.server);
         httpServer(+PORT);
-
+        
         // ENDPOINT PARA GRUPO DE WHATSAPP
+        // numero de whatsapp 456346356@s.whatsapp.net
         //----------------------------------------------------------------------
         adapterProvider.server.post('/send-message', async ( req, res) => {
             try {
                 const body = req.body;
                 const message = body.message;
                 const mediaUrl = body.mediaUrl;
+                const groupId = '120363362666788383@g.us';
 
-                await adapterProvider.sendMessage(process.env.FRIEND_NUMBER, message, {media: mediaUrl});
-                //await adapterProvider.sendMessage(process.env.FRIEND_NUMBER, 'gay', {});
+                const provider = adapterProvider.getInstance();
+                console.log("mediaUrl", mediaUrl);
+
+                // Preparar el mensaje según si hay media o no
+                if (mediaUrl) {
+                    // Mensaje con media
+                    await provider.sendMessage(groupId, {
+                        image: { url: mediaUrl }, // Para imágenes
+                        caption: message
+                    });
+                } else {
+                    // Mensaje de solo texto
+                    await provider.sendMessage(groupId, {
+                        text: message
+                    });
+                }
 
                 // Envía la respuesta para completar la solicitud HTTP
-                //req.res.writeHead(200, { 'Content-Type': 'application/json' });
-                //req.write(JSON.stringify({ success: true }));
-                //req.end();
-            } catch(err) {
-                console.error('Error sending message:', err);
-                // Envía la respuesta para completar la solicitud HTTP
-                //req.res.writeHead(500, { 'Content-Type': 'application/json' });
-                //req.write(JSON.stringify({ error: err.message }));
-                //req.end()
+                res.end(JSON.stringify({ status: 'success' }));
+            } catch (error) {
+                console.error('Error al enviar mensaje:', error);
+                
+                // Determinar el tipo de error para dar una mejor respuesta
+                const errorMessage = error.message?.includes('Timed Out') 
+                    ? 'Tiempo de espera agotado. Por favor, intente nuevamente.' 
+                    : error.message;
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ 
+                    status: 'error', 
+                    message: errorMessage 
+                }));
             }
         });
-
 
         adapterProvider.server.get('/get-message', (req, res) => {
             res.end('esto es el server contestando');

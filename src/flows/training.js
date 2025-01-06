@@ -6,6 +6,7 @@ import { format } from 'date-fns';
 import { S3Buckets } from '../services/s3buckets.js';
 import { DynamoDBService } from '../services/dynamodb.js'
 import { DynamoDBServiceBussiness } from '../services/dynamoDBBussiness.js'
+import { getGroupId } from '../utils/chats.js';
 import dotenv from 'dotenv';
 
 
@@ -36,6 +37,7 @@ const IMAGE_DIR = join(process.cwd(), 'images');
 // Constants
 const REGEX_ANY_CHARACTER = '/^.+$/';
 var phoneNumber = 0;
+//var idGroup = 0;
 
 // Delay response variable
 const VARIABLES_CHAT = join(DATA_DIR, 'variables_chat.json');
@@ -99,6 +101,9 @@ const handleMessage = async (ctx, provider) => {
 
     phoneNumber = ctx.from.replace('@s.whatsapp.net', '');
     logInfo("numero del usuario: ", phoneNumber);
+
+    const idGroup = await getGroupId("Proyecto Piscinas Los Hermanos", provider);
+    logInfo("id del grupo: ", idGroup);
 
     // Si es un mensaje de voz
     if (ctx.message?.audioMessage || ctx.message?.messageContextInfo?.messageContent?.audioMessage) {
