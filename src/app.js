@@ -4,6 +4,8 @@ import { allFlows } from './flows/index.js';
 import { initializeDataFiles } from './utils/flow-manager.js';
 import dotenv from 'dotenv';
 import { httpInject } from "@builderbot-plugins/openai-assistants";
+import { createGroupMessageFlow, GroupMessageHandler } from './utils/groupMessageHandler.js';
+//import { messageFromGroup } from './flows/training.js';
 
 // Initialize environment variables
 dotenv.config();
@@ -23,7 +25,7 @@ const main = async () => {
 
         // Initialize adapters
         const adapterDB = new MemoryDB();
-        const adapterFlow = createFlow(allFlows);
+        //const adapterFlow = createFlow(allFlows);
         
         // Configure provider with specific options
         const adapterProvider = createProvider(BaileysProvider, {
@@ -37,6 +39,26 @@ const main = async () => {
                 downloadHistory: true
             }
         });
+
+        // Inicializar el handler de mensajes de grupo
+        const groupHandler = new GroupMessageHandler(adapterProvider);
+
+        // Crear un flow específico para mensajes de grupo
+       /* const groupMessageFlow = addKeyword(EVENTS.MESSAGE)
+            .addAction(async (ctx, { provider }) => {
+                console.log('Mensaje recibido:', ctx.body);
+                
+                // Verificar si es un mensaje de grupo
+                if (ctx.key?.remoteJid?.endsWith('@g.us')) {
+                    console.log('Mensaje de grupo detectado');
+                    const messageData = await groupHandler.processMessage(ctx);
+                    console.log('Mensaje procesado:', messageData);
+                }
+            });*/
+
+        //Agregar el flow de mensajes de grupo a los flows existentes
+        const flows = [...allFlows, /*groupMessageFlow*/];
+        const adapterFlow = createFlow(flows);
 
         // Create bot with all configurations
         const {httpServer} = await createBot({
@@ -96,6 +118,14 @@ const main = async () => {
                     message: errorMessage 
                 }));
             }
+
+           if (groupHandler.isBotMember('120363388728191905@g.us')) {
+                console.log('\n[PROCESANDO MENSAJE DEL NÚMERO DE PRESUPUESTOS]');
+                console.log('Número detectado:');
+                console.log('Contenido:');
+                //await procesarRespuestaPresupuesto(ctx, flowDynamic);
+            }
+
         });
 
         adapterProvider.server.get('/get-message', (req, res) => {
