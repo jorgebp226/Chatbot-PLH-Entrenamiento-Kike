@@ -4,13 +4,12 @@ import { allFlows } from './flows/index.js';
 import { initializeDataFiles } from './utils/flow-manager.js';
 import dotenv from 'dotenv';
 import { httpInject } from "@builderbot-plugins/openai-assistants";
-import { createGroupMessageFlow, GroupMessageHandler } from './utils/groupMessageHandler.js';
-//import { messageFromGroup } from './flows/training.js';
 
 // Initialize environment variables
 dotenv.config();
 
-const PORT = process.env.PORT ?? 3000
+const PORT = process.env.PORT ?? 3000;
+const GROUP_ID = process.env.GROUP_ID;
 
 // Validate required environment variables
 if (!process.env.OPENAI_API_KEY) {
@@ -25,8 +24,8 @@ const main = async () => {
 
         // Initialize adapters
         const adapterDB = new MemoryDB();
-        //const adapterFlow = createFlow(allFlows);
-        
+        const adapterFlow = createFlow(allFlows);
+
         // Configure provider with specific options
         const adapterProvider = createProvider(BaileysProvider, {
             // Enable file downloads
@@ -40,51 +39,30 @@ const main = async () => {
             }
         });
 
-        // Inicializar el handler de mensajes de grupo
-        const groupHandler = new GroupMessageHandler(adapterProvider);
-
-        // Crear un flow específico para mensajes de grupo
-       /* const groupMessageFlow = addKeyword(EVENTS.MESSAGE)
-            .addAction(async (ctx, { provider }) => {
-                console.log('Mensaje recibido:', ctx.body);
-                
-                // Verificar si es un mensaje de grupo
-                if (ctx.key?.remoteJid?.endsWith('@g.us')) {
-                    console.log('Mensaje de grupo detectado');
-                    const messageData = await groupHandler.processMessage(ctx);
-                    console.log('Mensaje procesado:', messageData);
-                }
-            });*/
-
-        //Agregar el flow de mensajes de grupo a los flows existentes
-        const flows = [...allFlows, /*groupMessageFlow*/];
-        const adapterFlow = createFlow(flows);
-
         // Create bot with all configurations
-        const {httpServer} = await createBot({
+        const { httpServer } = await createBot({
             flow: adapterFlow,
             provider: adapterProvider,
             database: adapterDB,
             // Additional settings for media handling
             settings: {
-               saveMedia: true,
-               mediaPath: './data/media',
-               qrPath: './data/qr'
+                saveMedia: true,
+                mediaPath: './data/media',
+                qrPath: './data/qr'
             }
         });
 
         httpInject(adapterProvider.server);
         httpServer(+PORT);
-        
+
         // ENDPOINT PARA GRUPO DE WHATSAPP
-        // numero de whatsapp 456346356@s.whatsapp.net
         //----------------------------------------------------------------------
-        adapterProvider.server.post('/send-message', async ( req, res) => {
+        adapterProvider.server.post('/send-message', async (req, res) => {
             try {
                 const body = req.body;
                 const message = body.message;
                 const mediaUrl = body.mediaUrl;
-                const groupId = '120363362666788383@g.us';
+                const groupId = GROUP_ID;
 
                 const provider = adapterProvider.getInstance();
                 console.log("mediaUrl", mediaUrl);
@@ -107,23 +85,16 @@ const main = async () => {
                 res.end(JSON.stringify({ status: 'success' }));
             } catch (error) {
                 console.error('Error al enviar mensaje:', error);
-                
+
                 // Determinar el tipo de error para dar una mejor respuesta
-                const errorMessage = error.message?.includes('Timed Out') 
-                    ? 'Tiempo de espera agotado. Por favor, intente nuevamente.' 
+                const errorMessage = error.message?.includes('Timed Out')
+                    ? 'Tiempo de espera agotado. Por favor, intente nuevamente.'
                     : error.message;
                 res.writeHead(500, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ 
-                    status: 'error', 
-                    message: errorMessage 
+                res.end(JSON.stringify({
+                    status: 'error',
+                    message: errorMessage
                 }));
-            }
-
-           if (groupHandler.isBotMember('120363388728191905@g.us')) {
-                console.log('\n[PROCESANDO MENSAJE DEL NÚMERO DE PRESUPUESTOS]');
-                console.log('Número detectado:');
-                console.log('Contenido:');
-                //await procesarRespuestaPresupuesto(ctx, flowDynamic);
             }
 
         });

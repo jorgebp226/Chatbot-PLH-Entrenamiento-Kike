@@ -6,8 +6,7 @@ import { format } from 'date-fns';
 import { S3Buckets } from '../services/s3buckets.js';
 import { DynamoDBService } from '../services/dynamodb.js'
 import { DynamoDBServiceBussiness } from '../services/dynamoDBBussiness.js'
-import { getGroupId, isGroupMessage, listenToGroupMessages, processGroupMessage } from '../utils/chats.js';
-import { createGroupMessageFlow, GroupMessageHandler } from '../utils/groupMessageHandler.js';
+import { getGroupId, listenToGroupMessages } from '../utils/chats.js';
 import dotenv from 'dotenv';
 
 
@@ -60,44 +59,6 @@ const logInfo = (context, message, data = null) => {
 logInfo("tiempo de respuesta incial: ", message_delay);
 
 
-// Respuesta del grupo de obra
-/*const checkGroupMessage = async (ctx, provider, jid) => {
-    if (isGroupMessage(jid)) {
-        const isMember = await isBotGroupMember(provider, jid);
-        if (isMember) {
-            console.log('El bot recibió un mensaje en un grupo del que es miembro');
-            return true;
-        }
-    }
-    return false;
-};*/
-
-/*export const messageFromGroup = async(ctx, {provider}) => {
-    try {
-        // Verificar que tenemos un mensaje válido
-        if (!ctx || !ctx.key || !ctx.key.remoteJid) {
-            return false;
-        }
-
-        const isGroup = await isGroupMessage(ctx);
-        if (!isGroup) {
-            return false;
-        }
-
-        // Tu lógica para procesar el mensaje de grupo
-        console.log('Mensaje recibido en grupo:', {
-            groupId: ctx.key.remoteJid,
-            message: ctx.body || ctx.message?.conversation,
-            sender: ctx.key.participant
-        });
-
-        return true;
-    } catch (error) {
-        console.error('Error al procesar mensaje de grupo:', error);
-        return false;
-    }
-};*/
-
 // Function to process audio messages
 const processAudioMessage = async (ctx, provider) => {
     try {
@@ -141,7 +102,7 @@ const handleMessage = async (ctx, provider) => {
     phoneNumber = ctx.from.replace('@s.whatsapp.net', '');
     logInfo("numero del usuario: ", phoneNumber);
 
-    const groupInfo = await getGroupId("Proyecto Piscinas Los Hermanos", provider);
+    const groupInfo = await getGroupId("Pruebas Talky", provider);
 
     if(groupInfo) {
         logInfo('Id del grupo', groupInfo.id);
@@ -149,17 +110,6 @@ const handleMessage = async (ctx, provider) => {
     }
     
     const stopListening = await listenToGroupMessages(groupInfo.id, provider);
-
-    const groupHandler = new GroupMessageHandler(provider);
-
-    /*const contextoMensaje = await groupHandler.getGroupMetadata(idGroup);
-    
-    logInfo('El mensaje es de', contextoMensaje.message);
-    if(ctx.key.remoteJid.endsWith('g@.us')) {
-        console.log('Mensaje de grupo detectado');
-        const messageData = await groupHandler.processMessage(ctx);
-        console.log('Mensaje procesado:', messageData);
-    }*/
 
 
     // Si es un mensaje de voz

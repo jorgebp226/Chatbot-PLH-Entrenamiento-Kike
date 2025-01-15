@@ -1,10 +1,8 @@
-import { addKeyword, EVENTS } from '@builderbot/bot';
-import { OpenAI } from 'openai';
 import dotenv from 'dotenv';
-
-
+import { DynamoDBLeads } from '../services/dynamoDBLeads.js';
 dotenv.config();
 
+const dynamoDBLeads = new DynamoDBLeads();
 
 /**
  * Función para obtener el ID, contexto y mensajes de un grupo de WhatsApp
@@ -14,66 +12,163 @@ dotenv.config();
  */
 export const getGroupId = async (groupName, provider) => {
   try {
-      // Obtener la instancia del proveedor
-      const refProvider = await provider.getInstance();
-      
-      // Obtener todos los chats
-      const chats = await refProvider.groupFetchAllParticipating();
-      
-      // Buscar el grupo por nombre
-      for (const [id, chat] of Object.entries(chats)) {
-          if (chat.subject?.toLowerCase() === groupName.toLowerCase()) {
-              // Obtener metadatos del grupo
-              const metadata = await refProvider.groupMetadata(id);
-              
-              // Configurar escucha de mensajes del grupo
-              refProvider.ev.on('messages.upsert', ({ messages }) => {
-                  messages.forEach(message => {
-                      if (message.key.remoteJid === id) {
-                          console.log('Nuevo mensaje en el grupo:', {
-                              sender: message.key.participant,
-                              content: message.message?.conversation || 
-                                      message.message?.extendedTextMessage?.text ||
-                                      'Contenido multimedia',
-                              timestamp: message.messageTimestamp
-                          });
-                      }
-                  });
+    // Obtener la instancia del proveedor
+    const refProvider = await provider.getInstance();
+
+    // Obtener todos los chats
+    const chats = await refProvider.groupFetchAllParticipating();
+
+    // Buscar el grupo por nombre
+    for (const [id, chat] of Object.entries(chats)) {
+      if (chat.subject?.toLowerCase() === groupName.toLowerCase()) {
+        // Obtener metadatos del grupo
+        const metadata = await refProvider.groupMetadata(id);
+
+        // Configurar escucha de mensajes del grupo
+        refProvider.ev.on('messages.upsert', ({ messages }) => {
+          messages.forEach(message => {
+            if (message.key.remoteJid === id) {
+              console.log('Nuevo mensaje en el grupo:', {
+                sender: message.key.participant,
+                content: message.message?.conversation ||
+                  message.message?.extendedTextMessage?.text ||
+                  'Contenido multimedia',
+                timestamp: message.messageTimestamp
               });
+            }
+          });
+        });
 
-              // Construir el objeto de contexto
-              const groupContext = {
-                  id: id,
-                  name: chat.subject,
-                  metadata: {
-                      owner: metadata.owner,
-                      participants: metadata.participants.map(participant => ({
-                          id: participant.id,
-                          admin: participant.admin ? true : false,
-                      })),
-                      participantsCount: metadata.participants.length,
-                      description: metadata.desc,
-                      creation: metadata.creation,
-                      settings: {
-                          announce: metadata.announce,
-                          restricted: metadata.restrict,
-                          ephemeralDuration: metadata.ephemeralDuration
-                      }
-                  },
-                  lastMessageTimestamp: chat.conversationTimestamp,
-                  unreadCount: chat.unreadCount || 0
-              };
+        // Construir el objeto de contexto
+        const groupContext = {
+          id: id,
+          name: chat.subject,
+          metadata: {
+            owner: metadata.owner,
+            participants: metadata.participants.map(participant => ({
+              id: participant.id,
+              admin: participant.admin ? true : false,
+            })),
+            participantsCount: metadata.participants.length,
+            description: metadata.desc,
+            creation: metadata.creation,
+            settings: {
+              announce: metadata.announce,
+              restricted: metadata.restrict,
+              ephemeralDuration: metadata.ephemeralDuration
+            }
+          },
+          lastMessageTimestamp: chat.conversationTimestamp,
+          unreadCount: chat.unreadCount || 0
+        };
 
-              return groupContext;
+        return groupContext;
+      }
+    }
+
+    return null;
+  } catch (error) {
+    console.error('Error al buscar el grupo:', error);
+    return null;
+  }
+};
+
+// Funciones para el procesamiento de respuestas de presupuestos
+const extractInfoFromMessage = (message) => {
+  try {
+      const regex = {
+          id_proyecto: /ID Proyecto:\s*([^\n]+)/i,
+          direccion: /Dirección:\s*([^\n]+)/i,
+          excavacion: /Excavación:\s*([^\n]+)/i,
+          medidas: /Medidas piscina:\s*(\d+x\d+)\s*metros/i,
+          superficie: /Superficie parcela:\s*(\d+)\s*m²/i,
+          coronacion: /Coronación:\s*([^\n]+)/i,
+          interior: /Interior:\s*([^\n]+)/i
+      };
+
+      const info = {};
+      for (const [key, reg] of Object.entries(regex)) {
+          const match = message.match(reg);
+          if (match) {
+              info[key] = match[1].trim();
           }
       }
-      
-      return null;
+
+      return info;
   } catch (error) {
-      console.error('Error al buscar el grupo:', error);
+      console.error('Error extrayendo información:', error);
       return null;
   }
 };
+
+const formatExtractedInfo = (originalInfo, response) => {
+  const presupuesto = response.replace(/[^0-9]/g, '');
+  
+  return {
+      id_proyecto: originalInfo.id_proyecto || 'No especificado',
+      direccion: originalInfo.direccion || 'No especificada',
+      excavacion: originalInfo.excavacion || 'No especificada',
+      medidas: originalInfo.medidas || 'No especificadas',
+      superficie: originalInfo.superficie || 'No especificada',
+      coronacion: originalInfo.coronacion || 'No especificada',
+      interior: originalInfo.interior || 'No especificado',
+      presupuesto: presupuesto ? `${presupuesto}€` : 'No especificado'
+  };
+};
+
+const procesarRespuestaPresupuesto = async (message, quotedMessage) => {
+  try {
+      console.log('\n[PROCESAMIENTO DE RESPUESTA DE PRESUPUESTO]');
+      console.log('Mensaje recibido:', message);
+
+      if (!quotedMessage) {
+          console.log('No es una respuesta a un mensaje');
+          return;
+      }
+
+      const originalText = quotedMessage.conversation || quotedMessage.extendedTextMessage?.text;
+
+      console.log('Mensaje original:', originalText);
+      console.log('Respuesta:', message);
+
+      if (!originalText || !originalText.includes('Dirección:')) {
+          console.log('El mensaje original no tiene el formato esperado');
+          return;
+      }
+
+      const extractedInfo = extractInfoFromMessage(originalText);
+      if (!extractedInfo) {
+          console.log('No se pudo extraer información del mensaje');
+          return;
+      }
+
+      const formattedInfo = formatExtractedInfo(extractedInfo, message);
+
+      const apiData = {
+          projectId: formattedInfo.id_proyecto,
+          budget: parseInt(formattedInfo.presupuesto.replace('€', ''))
+      };
+
+      /*try {
+          await axios.post('https://7g6o6vby9j.execute-api.eu-west-3.amazonaws.com/Talky-PLH/coger-presupuesto', apiData);
+          console.log('Presupuesto enviado exitosamente a la API');
+      } catch (error) {
+          console.error('Error al enviar a la API:', error);
+      }*/
+
+          console.log('Mensaje que se envía:', apiData);
+
+         const project = await dynamoDBLeads.getProject(apiData.projectId);
+         console.log(project);
+
+         await dynamoDBLeads.saveBudget(apiData.projectId, apiData.budget);
+
+  } catch (error) {
+      console.error('[ERROR EN PROCESAMIENTO DE PRESUPUESTO]', error);
+      console.error('Stack trace:', error.stack);
+  }
+};
+
 
 /**
 * Función para escuchar mensajes de un grupo específico
@@ -83,31 +178,36 @@ export const getGroupId = async (groupName, provider) => {
 */
 export const listenToGroupMessages = async (groupId, provider) => {
   const refProvider = await provider.getInstance();
-  
+
   const listener = ({ messages }) => {
-      messages.forEach(message => {
-          if (message.key.remoteJid === groupId) {
-              const messageData = {
-                  messageId: message.key.id,
-                  sender: message.key.participant,
-                  timestamp: message.messageTimestamp,
-                  content: message.message?.conversation || 
-                          message.message?.extendedTextMessage?.text ||
-                          message.message?.imageMessage?.caption ||
-                          'Contenido multimedia',
-                  type: getMessageType(message)
-              };
-              console.log('Mensaje recibido:', messageData);
-              // Aquí puedes agregar tu lógica para procesar el mensaje
-          }
-      });
+    messages.forEach(message => {
+      if (message.key.remoteJid === groupId) {
+        const messageData = {
+          messageId: message.key.id,
+          sender: message.key.participant,
+          timestamp: message.messageTimestamp,
+          content: message.message?.conversation ||
+            message.message?.extendedTextMessage?.text ||
+            message.message?.imageMessage?.caption ||
+            'Contenido multimedia',
+          type: getMessageType(message),
+          quotedMessage: message.message?.extendedTextMessage?.quotedMessage || message.message?.extendedTextMessage?.contextInfo?.quotedMessage
+        };
+        console.log('Mensaje recibido:', messageData);
+        // Aquí puedes agregar tu lógica para procesar el mensaje
+        console.log('VAMOS A PROCESAR LA RESPUESTA');
+        if(messageData.quotedMessage != '') {
+          procesarRespuestaPresupuesto(messageData.content, messageData.quotedMessage);
+        }     
+      }
+    });
   };
 
   refProvider.ev.on('messages.upsert', listener);
-  
+
   // Retornar función para detener la escucha
   return () => {
-      refProvider.ev.off('messages.upsert', listener);
+    refProvider.ev.off('messages.upsert', listener);
   };
 };
 
@@ -123,79 +223,3 @@ const getMessageType = (msg) => {
   return 'other';
 };
 
-
-
-/**
- * Función para verificar si el bot es miembro del grupo
- * @param {object} provider - Instancia del provider
- * @param {string} groupJid - ID del grupo
- * @returns {Promise<boolean>}
- */
-export const isBotGroupMember = async (provider, groupJid) => {
-  try {
-    const refProvider = await provider.getInstance();
-    const groupMetadata = await refProvider.groupMetadata(groupJid);
-    const botNumber = refProvider.user.id.split(':')[0];
-    
-    return groupMetadata.participants.some(
-      participant => participant.id.split('@')[0] === botNumber
-    );
-  } catch (error) {
-    console.error('Error al verificar membresía del grupo:', error);
-    return false;
-  }
-};
-
-/**
- * Verifica si un mensaje viene de un grupo
- * @param {object} message - Mensaje a verificar
- * @returns {boolean}
- */
-export const isGroupMessage = (message) => {
-  if (!message?.key?.remoteJid) return false;
-  return message.key.remoteJid.endsWith('@g.us');
-};
-
-/**
- * Flow para manejar mensajes de grupo
- */
-export const flowGroupMessages = addKeyword(EVENTS.WELCOME)
-    .addAction(async (ctx, { provider }) => {
-        try {
-            if (!isGroupMessage(ctx)) return;
-
-            const jid = ctx.key.remoteJid;
-            const refProvider = await provider.getInstance();
-            const groupMetadata = await refProvider.groupMetadata(jid);
-
-            // Retornar información relevante del mensaje
-            return {
-                groupId: jid,
-                groupName: groupMetadata.subject,
-                message: ctx.body,
-                sender: ctx.key.participant,
-                timestamp: new Date().toISOString()
-            };
-
-        } catch (error) {
-            console.error('Error al procesar mensaje de grupo:', error);
-            return null;
-        }
-    });
-
-/**
- * Procesa un mensaje de grupo sin interferir con otros flujos
- * @param {object} ctx - Contexto del mensaje
- * @param {object} provider - Proveedor de WhatsApp
- * @returns {Promise<object|null>}
- */
-export const processGroupMessage = async (ctx, provider) => {
-    try {
-        if (!isGroupMessage(ctx)) return null;
-        
-        return await flowGroupMessages.executeAction(ctx, { provider });
-    } catch (error) {
-        console.error('Error al procesar mensaje de grupo:', error);
-        return null;
-    }
-};
