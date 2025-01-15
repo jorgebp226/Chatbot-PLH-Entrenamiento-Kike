@@ -4,8 +4,9 @@ import { readFileSync, appendFileSync, writeFileSync, existsSync, mkdirSync, cre
 import { join } from 'path';
 import { format } from 'date-fns';
 import { S3Buckets } from '../services/s3buckets.js';
-import { DynamoDBService } from '../services/dynamodb.js'
-import { DynamoDBServiceBussiness } from '../services/dynamoDBBussiness.js'
+import { DynamoDBService } from '../services/dynamodb.js';
+import { DynamoDBServiceBussiness } from '../services/dynamoDBBussiness.js';
+import { DynamoDBPhoneNumbers } from '../services/dynamoDBPhoneNumbers.js';
 import { getGroupId, listenToGroupMessages } from '../utils/chats.js';
 import dotenv from 'dotenv';
 
@@ -25,6 +26,7 @@ const DATA_DIR = join(process.cwd(), 'data');
 // Inicializar el servicio de DynamoDB
 const dynamoService = new DynamoDBService();
 const dynamoServiceBussiness = new DynamoDBServiceBussiness();
+const dynamoDBPhonenNumbers = new DynamoDBPhoneNumbers();
 
 
 // Prompts paths
@@ -263,6 +265,15 @@ export const flowTraining = addKeyword(REGEX_ANY_CHARACTER, { regex: true })
         try {
             //const message = ctx.body;
             let isInTraining = state.get('isInTraining');
+
+            phoneNumber = ctx.from.replace('@s.whatsapp.net', '');
+            //logInfo("numero del usuario: ", phoneNumber);
+
+            if(dynamoDBPhonenNumbers.getPhoneId(phoneNumber)) {
+                logInfo('se ha encontrado el numero en la BBDD', phoneNumber);
+                state.clear();
+                return;
+            }
 
             const message = await handleMessage(ctx, provider);
 
