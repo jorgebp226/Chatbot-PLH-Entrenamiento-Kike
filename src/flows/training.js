@@ -269,7 +269,7 @@ export const flowTraining = addKeyword(REGEX_ANY_CHARACTER, { regex: true })
             phoneNumber = ctx.from.replace('@s.whatsapp.net', '');
             //logInfo("numero del usuario: ", phoneNumber);
 
-            if(dynamoDBPhonenNumbers.getPhoneId(phoneNumber)) {
+            if(!dynamoDBPhonenNumbers.getPhoneId(phoneNumber)) {
                 logInfo('se ha encontrado el numero en la BBDD', phoneNumber);
                 state.clear();
                 return;

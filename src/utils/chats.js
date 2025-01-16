@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import { DynamoDBLeads } from '../services/dynamoDBLeads.js';
+import axios from 'axios';
 dotenv.config();
 
 const dynamoDBLeads = new DynamoDBLeads();
@@ -149,12 +150,13 @@ const procesarRespuestaPresupuesto = async (message, quotedMessage) => {
           budget: parseInt(formattedInfo.presupuesto.replace('€', ''))
       };
 
-      /*try {
-          await axios.post('https://7g6o6vby9j.execute-api.eu-west-3.amazonaws.com/Talky-PLH/coger-presupuesto', apiData);
+      try {
+          await axios.post('https://uhxj6wkk88.execute-api.eu-west-3.amazonaws.com/MessageSender_v1/send_pricing', apiData);
           console.log('Presupuesto enviado exitosamente a la API');
+          
       } catch (error) {
           console.error('Error al enviar a la API:', error);
-      }*/
+      }
 
           console.log('Mensaje que se envía:', apiData);
 
