@@ -5,11 +5,14 @@ import { initializeDataFiles } from './utils/flow-manager.js';
 import dotenv from 'dotenv';
 import { httpInject } from "@builderbot-plugins/openai-assistants";
 
+
 // Initialize environment variables
 dotenv.config();
 
 const PORT = process.env.PORT ?? 3000;
 const GROUP_ID = process.env.GROUP_ID;
+const FRIEND_NUMBER = process.env.FRIEND_NUMBER;
+
 
 // Validate required environment variables
 if (!process.env.OPENAI_API_KEY) {
@@ -63,6 +66,54 @@ const main = async () => {
                 const message = body.message;
                 const mediaUrl = body.mediaUrl;
                 const groupId = GROUP_ID;
+
+                const provider = adapterProvider.getInstance();
+                console.log("mediaUrl", mediaUrl);
+
+                // Preparar el mensaje según si hay media o no
+                if (mediaUrl) {
+                    // Mensaje con media
+                    await provider.sendMessage(groupId, {
+                        image: { url: mediaUrl }, // Para imágenes
+                        caption: message
+                    });
+                } else {
+                    // Mensaje de solo texto
+                    await provider.sendMessage(groupId, {
+                        text: message
+                    });
+                }
+
+                // Envía la respuesta para completar la solicitud HTTP
+                res.end(JSON.stringify({ status: 'success' }));
+            } catch (error) {
+                console.error('Error al enviar mensaje:', error);
+
+                // Determinar el tipo de error para dar una mejor respuesta
+                const errorMessage = error.message?.includes('Timed Out')
+                    ? 'Tiempo de espera agotado. Por favor, intente nuevamente.'
+                    : error.message;
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                    status: 'error',
+                    message: errorMessage
+                }));
+            }
+
+        });
+
+        adapterProvider.server.get('/get-message', (req, res) => {
+            res.end('esto es el server contestando');
+        });
+        //-----------------------------------------------------------------------
+         // ENDPOINT PARA ENVIO DE MENSAJE A KIKE
+        //----------------------------------------------------------------------
+        adapterProvider.server.post('/send-message-kike', async (req, res) => {
+            try {
+                const body = req.body;
+                const message = body.message;
+                const mediaUrl = body.mediaUrl;
+                const groupId = FRIEND_NUMBER;
 
                 const provider = adapterProvider.getInstance();
                 console.log("mediaUrl", mediaUrl);

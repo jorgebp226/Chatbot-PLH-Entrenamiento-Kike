@@ -1,5 +1,5 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, UpdateCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import dotenv from 'dotenv';
 
 // Cargar las variables de entorno
@@ -32,6 +32,33 @@ export class DynamoDBPhoneNumbers {
   async getPhoneId(phoneNumber) {
     const data = await this.getUserByphone(phoneNumber);
     return data.phoneid || [] ;
+  }
+
+  // Añadir un nuevo registro de teléfono
+async addNewPhoneNumber(phoneNumber, name) {
+    try {
+      const command = new PutCommand({
+        TableName: this.tableName,
+        Item: {
+          phoneid: phoneNumber,
+          nombre: name,
+          createdAt: new Date().toISOString()
+        }
+      });
+  
+      await this.docClient.send(command);
+      return {
+        success: true,
+        message: 'Número de teléfono añadido correctamente'
+      };
+    } catch (error) {
+      console.error('Error al añadir número de teléfono:', error);
+      return {
+        success: false,
+        message: 'Error al añadir el número de teléfono',
+        error
+      };
+    }
   }
 
 }

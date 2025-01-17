@@ -41,6 +41,10 @@ const REGEX_ANY_CHARACTER = '/^.+$/';
 var phoneNumber = 0;
 //var idGroup = 0;
 
+//Group for sending the message
+const GROUP_ID = process.env.GROUP_ID;
+const GROUP_NAME = process.env.GROUP_NAME;
+
 // Delay response variable
 const VARIABLES_CHAT = join(DATA_DIR, 'variables_chat.json');
 const message_delay_file = readFileSync(VARIABLES_CHAT, 'utf-8');
@@ -104,7 +108,7 @@ const handleMessage = async (ctx, provider) => {
     phoneNumber = ctx.from.replace('@s.whatsapp.net', '');
     logInfo("numero del usuario: ", phoneNumber);
 
-    const groupInfo = await getGroupId("Pruebas Talky", provider);
+    const groupInfo = await getGroupId(GROUP_NAME, provider);
 
     if(groupInfo) {
         logInfo('Id del grupo', groupInfo.id);
@@ -117,8 +121,8 @@ const handleMessage = async (ctx, provider) => {
     // Si es un mensaje de voz
     if (ctx.message?.audioMessage || ctx.message?.messageContextInfo?.messageContent?.audioMessage) {
         try {           
-            //const file = await provider.saveFile(ctx);
-            //await S3Buckets.uploadMedia(phoneNumber, file, 'audio');
+            const file = await provider.saveFile(ctx);
+            await S3Buckets.uploadMedia(phoneNumber, file, 'audio');
             const transcript = processAudioMessage(ctx, provider);
             return transcript;
         } catch (error) {
@@ -127,7 +131,7 @@ const handleMessage = async (ctx, provider) => {
         }
     } else if( ctx.message?.imageMessage || ctx.message?.messageContextInfo?.messageContent?.imageMessage) {
        try{ 
-            processImageMessage(ctx, provider);
+            //processImageMessage(ctx, provider);
             const file = await provider.saveFile(ctx);
             await S3Buckets.uploadMedia(phoneNumber, file, 'image');
             return ctx.body;
@@ -271,7 +275,7 @@ export const flowTraining = addKeyword(REGEX_ANY_CHARACTER, { regex: true })
 
             if(!dynamoDBPhonenNumbers.getPhoneId(phoneNumber)) {
                 logInfo('se ha encontrado el numero en la BBDD', phoneNumber);
-                state.clear();
+                //state.clear();
                 return;
             }
 

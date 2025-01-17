@@ -24,15 +24,15 @@ export class DynamoDBLeads {
     const response = await this.docClient.send(command);
     return response.Item || {
       id: projectId,
-      adress: '',
+      address: '',
       budget:'',
       Coronacion:'',
       createdAt:'',
       Interior:'',
       name:'',
-      parcelDimensions:'',
+      parcelDimensions:[],
       phone: '',
-      poolDimensions:'',
+      poolDimensions:[],
       source:'',
       status:'',
       updatedAt:''
