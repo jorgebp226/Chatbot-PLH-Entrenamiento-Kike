@@ -7,7 +7,7 @@ import { S3Buckets } from '../services/s3buckets.js';
 import { DynamoDBService } from '../services/dynamodb.js';
 import { DynamoDBServiceBussiness } from '../services/dynamoDBBussiness.js';
 import { DynamoDBPhoneNumbers } from '../services/dynamoDBPhoneNumbers.js';
-import { getGroupId, listenToGroupMessages } from '../utils/chats.js';
+import { getGroupId, listenToGroupMessages, listenerState } from '../utils/chats.js';
 import dotenv from 'dotenv';
 
 
@@ -79,6 +79,7 @@ const processAudioMessage = async (ctx, provider) => {
             file: audioData,
             model: 'whisper-1',
         });
+        console.log('Se comienza la transcripcion');
         const transcription = transcribeResponse.text;
         console.log('Respuesta del asistente de OpenAI:', transcription);
 
@@ -102,21 +103,30 @@ const processImageMessage = async (ctx, provider) => {
     }
 }
 
+const listenToGroup = async (ctx, provider) => {
+
+    const groupInfo = await getGroupId(GROUP_NAME, provider);
+
+    if( await groupInfo != null ) {
+        logInfo('Id del grupo', groupInfo.id);
+        //logInfo('Participantes ', groupInfo.metadata);
+
+        logInfo('isListening', listenerState.isListening);
+        if (listenerState.isListening === false) {
+            const stopListening = listenToGroupMessages(groupInfo.id, provider);
+        } else {
+            logInfo('Existe un listener activo');
+        }
+    }
+    return;
+}
+
 // Función auxiliar para manejar mensajes (texto o voz)
 const handleMessage = async (ctx, provider) => {
 
     phoneNumber = ctx.from.replace('@s.whatsapp.net', '');
     logInfo("numero del usuario: ", phoneNumber);
-
-    const groupInfo = await getGroupId(GROUP_NAME, provider);
-
-    if(groupInfo) {
-        logInfo('Id del grupo', groupInfo.id);
-        logInfo('Participantes ', groupInfo.metadata.parcitipants);
-    }
-    
-    const stopListening = await listenToGroupMessages(groupInfo.id, provider);
-
+    listenToGroup(ctx, provider);
 
     // Si es un mensaje de voz
     if (ctx.message?.audioMessage || ctx.message?.messageContextInfo?.messageContent?.audioMessage) {
@@ -167,6 +177,8 @@ const generateNewPrompt = async (modifications) => {
 
         const newPrompt = completion.choices[0].message.content;
         await dynamoService.updatePrompt(phoneNumber, newPrompt);
+        const newUpdatedPrompt = await dynamoService.getPrompt(phoneNumber);
+        logInfo('generateNewPrompt', {newUpdatedPrompt});
 
         logInfo('generateNewPrompt', 'Generated new prompt', { newPrompt });
         return newPrompt;
@@ -257,11 +269,6 @@ if (!existsSync(AUDIO_DIR)) {
     console.log(`Directorio creado: ${AUDIO_DIR}`);
 }
 
-// Asegúrate de que el directorio existe
-if (!existsSync(IMAGE_DIR)) {
-    mkdirSync(IMAGE_DIR, { recursive: true });
-    console.log(`Directorio creado: ${IMAGE_DIR}`);
-}
 
 // Main flow export
 export const flowTraining = addKeyword(REGEX_ANY_CHARACTER, { regex: true })
@@ -300,6 +307,7 @@ export const flowTraining = addKeyword(REGEX_ANY_CHARACTER, { regex: true })
                         '',
                         '¿En qué puedo ayudarte?'
                     ]);
+                    //listenToGroup(ctx, provider);
                     return;
                 }
                 return false; // Not in training, allow other flows

@@ -62,12 +62,16 @@ export class S3Buckets {
 
     static async getLatestImageUrlForUser(phoneNumber) {
         try {
+
+            // Normalize the phone number to remove any hidden characters
+            const normalizedPhone = phoneNumber.toString().trim().replace(/[^\d]/g, '');
+            
             // Configure the command to list objects in the user's image folder
             const command = new ListObjectsV2Command({
                 Bucket: BUCKET_NAME,
-                Prefix: `Imagenes/${phoneNumber}/`,
+                Prefix: `Imagenes/${normalizedPhone}/`,
                 MaxKeys: 1,  // We only need the latest one
-                StartAfter: `Imagenes/${phoneNumber}/`, // Start after the prefix to avoid listing the prefix itself
+                StartAfter: `Imagenes/${normalizedPhone}/`, // Start after the prefix to avoid listing the prefix itself
             });
 
             // Get the list of objects
@@ -92,6 +96,62 @@ export class S3Buckets {
         }
     }
 
+    static async getAllImageUrlForUser(phoneNumber) {
+        try {
+            // Normalize the phone number to remove any hidden characters
+            const normalizedPhone = phoneNumber.toString().trim().replace(/[^\d]/g, '');
+            
+            const prefix = `Imagenes/${normalizedPhone}/`;
+            console.log('Searching with prefix:', prefix);
+            
+            const command = new ListObjectsV2Command({
+                Bucket: BUCKET_NAME,
+                Prefix: prefix,
+                MaxKeys: 5,
+            });
+    
+            // Log the full command for debugging
+            console.log('S3 Command:', JSON.stringify(command.input, null, 2));
+    
+            // Get the list of objects
+            const response = await s3Client.send(command);
+            
+            // Log the full response for debugging
+            console.log('S3 Response:', JSON.stringify(response, null, 2));
+    
+            // Check if we found any objects
+            if (!response.Contents || response.Contents.length === 0) {
+                console.log(`No images found for user ${normalizedPhone}`);
+                console.log('Current bucket structure:');
+                
+                // List without prefix to see bucket contents
+                const checkCommand = new ListObjectsV2Command({
+                    Bucket: BUCKET_NAME,
+                    MaxKeys: 10
+                });
+                const checkResponse = await s3Client.send(checkCommand);
+                console.log('Bucket contents:', JSON.stringify(checkResponse.Contents, null, 2));
+                
+                return null;
+            }
+    
+            const signedUrls = [];
+            const numberOfImages = Math.min(response.Contents.length, 5);
+            
+            for (let i = 0; i < numberOfImages; i++) {
+                const image = response.Contents[i];
+                console.log('Processing image key:', image.Key);
+                const url = await this.getSignedUrl(image.Key);
+                signedUrls.push(url);
+            }
+            
+            return signedUrls;
+        } catch (error) {
+            console.error('Error getting image URLs:', error);
+            console.error('Full error object:', JSON.stringify(error, null, 2));
+            throw error;
+        }
+    }
     /**
        * Obtiene una imagen de S3 y la prepara para un payload de WhatsApp
        * @param {string} key - La clave del archivo en S3

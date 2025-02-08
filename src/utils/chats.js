@@ -9,6 +9,11 @@ const dynamoDBLeads = new DynamoDBLeads();
 const dynamoDBPhoneNumbers = new DynamoDBPhoneNumbers();
 const FRIEND_NUMBER = process.env.FRIEND_NUMBER;
 
+export const listenerState = {
+  isListening: false,
+  globalListener: null
+};
+
 
 /**
  * Función para obtener el ID, contexto y mensajes de un grupo de WhatsApp
@@ -34,7 +39,7 @@ export const getGroupId = async (groupName, provider) => {
         refProvider.ev.on('messages.upsert', ({ messages }) => {
           messages.forEach(message => {
             if (message.key.remoteJid === id) {
-              console.log('Nuevo mensaje en el grupo:', {
+              console.log('chats.js/getGroupId | Nuevo mensaje en el grupo:', {
                 sender: message.key.participant,
                 content: message.message?.conversation ||
                   message.message?.extendedTextMessage?.text ||
@@ -135,7 +140,7 @@ const procesarRespuestaPresupuesto = async (message, quotedMessage) => {
     const originalText = quotedMessage.conversation || quotedMessage.extendedTextMessage?.text;
 
     console.log('Mensaje original:', originalText);
-    console.log('Respuesta:', message);
+    //console.log('Respuesta:', message); //Aquí devuelvo todo
 
     if (!originalText || !originalText.includes('Dirección:')) {
       console.log('El mensaje original no tiene el formato esperado');
@@ -164,8 +169,11 @@ const procesarRespuestaPresupuesto = async (message, quotedMessage) => {
 
     // Modificación aquí para manejar la imagen
     let image = null;
+    let allImages = null;
     try {
       image = await S3Buckets.getLatestImageUrlForUser(project.phone);
+      allImages = await S3Buckets.getAllImageUrlForUser(project.phone);
+      console.log('Imagen que se va a enviar:', allImages.length);
     } catch (imageError) {
       console.log('No se pudo obtener la imagen:', imageError);
     }
@@ -182,7 +190,7 @@ const procesarRespuestaPresupuesto = async (message, quotedMessage) => {
         `Excavación: grúa Telescópica\n` +
         `Coronación: ${project.Coronacion || 'No especificada'}\n` +
         `Interior: ${project.Interior || 'No especificado'}\n` +
-        `Presupuesto: ${project.budget || '0'} €\n`
+        `Presupuesto: ${apiData.budget || '0'} €\n`
     };
 
     try {
@@ -200,24 +208,38 @@ const procesarRespuestaPresupuesto = async (message, quotedMessage) => {
       }
     }
 
-    const payload_image = {
-      phoneNumber: FRIEND_NUMBER,
-      message: project.id,
-      mediaUrl: image 
-    };
+    for (let i = 0; i < allImages.length; i++) {
 
-    try {
-      await axios.post('http://35.181.166.88:3001/send-message', payload_image, {
-        headers: {
-          'Content-Type': 'application/json'
+      if (!allImages[i]) {
+        console.log(`Saltando imagen ${i + 1} porque la URL es null o undefined`);
+        continue;
+      }
+
+      const payload_all_images = {
+        phoneNumber: FRIEND_NUMBER,
+        message: `${project.id} #imagen ${i + 1}`,
+        mediaUrl: allImages[i]
+      };
+      try {
+        await axios.post('http://35.181.166.88:3001/send-message', payload_all_images, {
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+        console.log(`Imagen ${i + 1} enviada exitosamente`);
+      } catch (error) {
+        console.error('Error al enviar a la API:', error);
+        // Agregar más información del error para debugging
+        if (error.response) {
+          console.error('Detalles del error:');
+          console.error('- Status:', error.response.status);
+          console.error('- Data:', error.response.data);
+          console.error('- Headers:', error.response.headers);
+        } else if (error.request) {
+          console.error('No se recibió respuesta del servidor');
+        } else {
+          console.error('Error al configurar la petición:', error.message);
         }
-      });
-    } catch (error) {
-      console.error('Error al enviar a la API:', error);
-      // Agregar más información del error para debugging
-      if (error.response) {
-        console.error('Error response data:', error.response.data);
-        console.error('Error response status:', error.response.status);
       }
     }
 
@@ -257,15 +279,20 @@ const procesarRespuestaPresupuesto = async (message, quotedMessage) => {
 */
 export const listenToGroupMessages = async (groupId, provider) => {
   const refProvider = await provider.getInstance();
-
-  // Remove all existing 'messages.upsert' listeners
-  refProvider.ev.removeAllListeners('messages.upsert');
-
-  // Set a higher max listeners limit if needed
-  //refProvider.ev.setListeners(100)
+  //console.log("El proveedor es:", refProvider);
+  // Si ya existe un listener, solo retornar
+  if (listenerState.isListening === true) {
+    console.log(listenerState.isListening);
+    console.log('-------------------------------------------------------------------');
+    console.log('Listener ya activo - Continuando procesamiento de mensajes');
+    console.log('-------------------------------------------------------------------');
+    return null;
+  }
 
   const listener = ({ messages }) => {
     messages.forEach(message => {
+      console.log("LISTENER: hay mensajes");
+     // console.log(messages);
       if (message.key.remoteJid === groupId) {
         const messageData = {
           messageId: message.key.id,
@@ -278,7 +305,7 @@ export const listenToGroupMessages = async (groupId, provider) => {
           type: getMessageType(message),
           quotedMessage: message.message?.extendedTextMessage?.quotedMessage || message.message?.extendedTextMessage?.contextInfo?.quotedMessage
         };
-        console.log('Mensaje recibido:', messageData);
+        //console.log('Mensaje recibido:', messageData);
         // Aquí puedes agregar tu lógica para procesar el mensaje
         console.log('VAMOS A PROCESAR LA RESPUESTA');
         if (messageData.quotedMessage != '') {
@@ -288,11 +315,27 @@ export const listenToGroupMessages = async (groupId, provider) => {
     });
   };
 
-  refProvider.ev.on('messages.upsert', listener);
+  // Solo crear nuevo listener si no existe uno
+ // if (!globalListener) {
+    // Asegurarse de que no haya listeners previos
+   // refProvider.ev.removeAllListeners('messages.upsert');
+
+    // Establecer el nuevo listener
+    listenerState.globalListener = listener;
+    refProvider.ev.on('messages.upsert', listenerState.globalListener);
+    listenerState.isListening = true;
+    console.log('Listener único establecido correctamente');
+ // }
+
 
   // Retornar función para detener la escucha
   return () => {
-    refProvider.ev.off('messages.upsert', listener);
+    if (isListening && globalListener) {
+      refProvider.ev.off('messages.upsert', listenerState.globalListener);
+      listenerState.globalListener = null;
+      listenerState.isListening = false;
+      console.log('Listener detenido y limpiado');
+    }
   };
 };
 
